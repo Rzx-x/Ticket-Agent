@@ -31,16 +31,12 @@ class ClaudeAIService:
         """
         try:
             prompt = self._build_classification_prompt(ticket_text, language_info)
-            
-            response = await asyncio.to_thread(
-                self.client.messages.create,
-                model=self.model,
-                max_tokens=1000,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            
+
+            # Call model in a robust way and extract text
+            model_text = await self._call_model(messages=[{"role": "user", "content": prompt}], max_tokens=1000)
+
             # Parse Claude's response
-            classification = self._parse_classification_response(response.content[0].text)
+            classification = self._parse_classification_response(model_text)
             
             logger.info(f"Ticket classified: {classification}")
             return classification
@@ -56,15 +52,10 @@ class ClaudeAIService:
         """
         try:
             prompt = self._build_response_prompt(ticket_text, classification, language_info, similar_tickets)
-            
-            response = await asyncio.to_thread(
-                self.client.messages.create,
-                model=self.model,
-                max_tokens=1500,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            
-            response_data = self._parse_response(response.content[0].text, language_info)
+
+            model_text = await self._call_model(messages=[{"role": "user", "content": prompt}], max_tokens=1500)
+
+            response_data = self._parse_response(model_text, language_info)
             
             logger.info(f"AI response generated: {response_data['confidence']}")
             return response_data
@@ -218,6 +209,87 @@ Response format:
             "follow_up_required": True,
             "language": language_info.get("primary_language", "english")
         }
+
+    async def _call_model(self, messages: List[Dict[str, str]], max_tokens: int = 1000) -> str:
+        """Call the configured model/client in a defensive way and return a text response.
+
+        This helper tries several common client shapes (Anthropic/Claude, OpenAI-like) and
+        extracts the text content robustly so the rest of the code doesn't rely on a single
+        response shape.
+        """
+        try:
+            # Try Anthropic messages.create style first (may be sync)
+            try:
+                response = await asyncio.to_thread(
+                    getattr(self.client, "messages").create,
+                    model=self.model,
+                    max_tokens=max_tokens,
+                    messages=messages
+                )
+            except Exception:
+                # Fallback: try completions / create style
+                try:
+                    response = await asyncio.to_thread(
+                        getattr(self.client, "completions").create,
+                        model=self.model,
+                        max_tokens=max_tokens,
+                        prompt=messages[0]["content"] if messages else ""
+                    )
+                except Exception:
+                    # Last resort: try client.create
+                    response = await asyncio.to_thread(
+                        getattr(self.client, "create", lambda *a, **k: ""),
+                        model=self.model,
+                        max_tokens=max_tokens,
+                        messages=messages
+                    )
+
+            return self._extract_text_from_response(response)
+        except Exception as e:
+            logger.error(f"Error calling model: {e}")
+            return ""
+
+    def _extract_text_from_response(self, response: Any) -> str:
+        """Try to extract a readable text string from various possible response shapes."""
+        try:
+            # If it's already a string
+            if isinstance(response, str):
+                return response
+
+            # Objects with a 'content' attribute (Anthropic recent SDK)
+            if hasattr(response, "content"):
+                content = response.content
+                if isinstance(content, str):
+                    return content
+                if isinstance(content, (list, tuple)) and len(content) > 0:
+                    first = content[0]
+                    if hasattr(first, "text"):
+                        return first.text
+                    if isinstance(first, dict):
+                        return first.get("text") or first.get("content") or str(first)
+
+            # Dict-like shapes (OpenAI style)
+            if isinstance(response, dict):
+                # OpenAI-like
+                choices = response.get("choices")
+                if choices and isinstance(choices, list) and len(choices) > 0:
+                    first = choices[0]
+                    if isinstance(first, dict):
+                        # Chat completion
+                        if "message" in first and isinstance(first["message"], dict):
+                            return first["message"].get("content", "")
+                        # Completion
+                        return first.get("text", "")
+
+                # Anthropic older style
+                if "completion" in response:
+                    return response.get("completion")
+
+            # Fallback to string representation
+            return str(response)
+        except Exception as e:
+            logger.error(f"Failed to extract text from model response: {e}")
+            return str(response)
 
 # Global instance
 claude_service = ClaudeAIService()

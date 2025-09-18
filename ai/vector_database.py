@@ -40,20 +40,21 @@ class QdrantVectorStore:
         """Add ticket embedding to vector store"""
         try:
             # Generate embedding
-            embedding = self.model.encode(text).tolist()
+            embedding = list(self.model.encode(text))
             
             # Create point
+            # Use ticket_id as the point id to make updates easier
             point = PointStruct(
-                id=str(uuid.uuid4()),
+                id=ticket_id,
                 vector=embedding,
                 payload={
                     "ticket_id": ticket_id,
                     "text": text,
-                    **metadata
+                    **(metadata or {})
                 }
             )
-            
-            # Insert point
+
+            # Insert or update point
             self.client.upsert(
                 collection_name=self.collection_name,
                 points=[point]
@@ -67,24 +68,26 @@ class QdrantVectorStore:
         """Find similar tickets based on query text"""
         try:
             # Generate query embedding
-            query_embedding = self.model.encode(query_text).tolist()
-            
+            query_embedding = list(self.model.encode(query_text))
+
             # Search similar vectors
             search_result = self.client.search(
                 collection_name=self.collection_name,
                 query_vector=query_embedding,
                 limit=limit,
-                score_threshold=0.7  # Only return results with high similarity
+                score_threshold=0.0  # return results, we'll filter by score if needed
             )
             
             # Format results
             similar_tickets = []
             for result in search_result:
+                payload = getattr(result, 'payload', result.get('payload') if isinstance(result, dict) else {})
+                score = getattr(result, 'score', result.get('score') if isinstance(result, dict) else None)
                 similar_tickets.append({
-                    "ticket_id": result.payload.get("ticket_id"),
-                    "text": result.payload.get("text"),
-                    "similarity_score": result.score,
-                    "metadata": {k: v for k, v in result.payload.items() 
+                    "ticket_id": payload.get("ticket_id"),
+                    "text": payload.get("text"),
+                    "similarity_score": score,
+                    "metadata": {k: v for k, v in payload.items() 
                                if k not in ["ticket_id", "text"]}
                 })
             
@@ -97,28 +100,7 @@ class QdrantVectorStore:
     def update_ticket_embedding(self, ticket_id: str, text: str, metadata: Dict[str, Any]):
         """Update existing ticket embedding"""
         try:
-            # First, find existing points for this ticket
-            search_result = self.client.scroll(
-                collection_name=self.collection_name,
-                scroll_filter={
-                    "must": [
-                        {
-                            "key": "ticket_id",
-                            "match": {"value": ticket_id}
-                        }
-                    ]
-                }
-            )
-            
-            # Delete existing points
-            if search_result[0]:
-                point_ids = [point.id for point in search_result[0]]
-                self.client.delete(
-                    collection_name=self.collection_name,
-                    points_selector={"points": point_ids}
-                )
-            
-            # Add new embedding
+            # Since we store point id as ticket_id, upsert will overwrite existing point
             self.add_ticket_embedding(ticket_id, text, metadata)
             
         except Exception as e:

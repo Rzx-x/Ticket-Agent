@@ -1,7 +1,12 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, Float, ForeignKey, Enum
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, Float, ForeignKey, Enum, JSON
+from sqlalchemy.orm import declarative_base, relationship
+import os
+
+# For compatibility across SQLite (dev) and Postgres (prod), use generic types here.
+# If you need Postgres-specific types (UUID as native type, JSONB), handle that
+# at migration-time or in a separate models file.
+SQL_UUID = String(36)
+SQL_JSONB = JSON
 from datetime import datetime
 import uuid
 import enum
@@ -31,7 +36,7 @@ class TicketUrgency(str, enum.Enum):
 class Ticket(Base):
     __tablename__ = "tickets"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(SQL_UUID, primary_key=True, default=lambda: str(uuid.uuid4()))
     ticket_number = Column(String(50), unique=True, nullable=False)
     
     # Source information
@@ -68,8 +73,8 @@ class Ticket(Base):
     user_name = Column(String(255))
     user_department = Column(String(100))
     
-    # Additional metadata
-    metadata = Column(JSONB)  # Flexible field for extra data
+    # Additional metadata (use a different attribute name to avoid conflict with SQLAlchemy's metadata)
+    extra_metadata = Column(SQL_JSONB, name='metadata')  # Flexible field for extra data
     
     # Relationships
     responses = relationship("TicketResponse", back_populates="ticket")
@@ -78,8 +83,8 @@ class Ticket(Base):
 class TicketResponse(Base):
     __tablename__ = "ticket_responses"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    ticket_id = Column(UUID(as_uuid=True), ForeignKey("tickets.id"), nullable=False)
+    id = Column(SQL_UUID, primary_key=True, default=lambda: str(uuid.uuid4()))
+    ticket_id = Column(SQL_UUID, ForeignKey("tickets.id"), nullable=False)
     
     # Response content
     response_text = Column(Text, nullable=False)
@@ -104,8 +109,8 @@ class TicketResponse(Base):
 class TicketAnalytics(Base):
     __tablename__ = "ticket_analytics"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    ticket_id = Column(UUID(as_uuid=True), ForeignKey("tickets.id"), nullable=False)
+    id = Column(SQL_UUID, primary_key=True, default=lambda: str(uuid.uuid4()))
+    ticket_id = Column(SQL_UUID, ForeignKey("tickets.id"), nullable=False)
     
     # Performance metrics
     first_response_time_minutes = Column(Integer)
@@ -132,7 +137,7 @@ class TicketAnalytics(Base):
 class KnowledgeBase(Base):
     __tablename__ = "knowledge_base"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(SQL_UUID, primary_key=True, default=lambda: str(uuid.uuid4()))
     
     # Content
     title = Column(String(500), nullable=False)
@@ -142,7 +147,7 @@ class KnowledgeBase(Base):
     # Classification
     category = Column(String(100), nullable=False)
     subcategory = Column(String(100))
-    tags = Column(JSONB)  # Array of tags
+    tags = Column(SQL_JSONB)  # Array of tags
     
     # Language
     language = Column(String(50), default="english")
