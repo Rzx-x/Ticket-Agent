@@ -13,6 +13,44 @@ logger = logging.getLogger(__name__)
 class TicketService:
     def __init__(self):
         self.ticket_counter = 0
+
+    def _to_status(self, value):
+        """Convert a string or enum to TicketStatus enum or return None"""
+        if value is None:
+            return None
+        # If already an enum instance
+        try:
+            if isinstance(value, TicketStatus):
+                return value
+        except Exception:
+            pass
+        # Try mapping from string
+        try:
+            val = str(value).lower()
+            for s in TicketStatus:
+                if s.value == val or s.name.lower() == val:
+                    return s
+        except Exception:
+            pass
+        return None
+
+    def _to_urgency(self, value):
+        """Convert a string or enum to TicketUrgency enum or return None"""
+        if value is None:
+            return None
+        try:
+            if isinstance(value, TicketUrgency):
+                return value
+        except Exception:
+            pass
+        try:
+            val = str(value).lower()
+            for u in TicketUrgency:
+                if u.value == val or u.name.lower() == val:
+                    return u
+        except Exception:
+            pass
+        return None
     
     async def create_ticket(self, db: Session, ticket_data: TicketCreate) -> Ticket:
         """Create a new ticket"""
@@ -31,7 +69,7 @@ class TicketService:
                 user_email=ticket_data.user_email,
                 user_name=ticket_data.user_name,
                 user_department=ticket_data.user_department,
-                metadata=ticket_data.metadata or {}
+                extra_metadata=ticket_data.metadata or {}
             )
             
             db.add(ticket)
@@ -154,10 +192,11 @@ class TicketService:
             ticket.language_confidence = language_info.get("confidence", 0.0)
             ticket.is_mixed_language = language_info.get("is_mixed", False)
             
-            # Update classification
+            # Update classification (map to enums where appropriate)
             ticket.category = classification.get("category")
             ticket.subcategory = classification.get("subcategory")
-            ticket.urgency = classification.get("urgency")
+            # Map urgency string to enum if possible
+            ticket.urgency = self._to_urgency(classification.get("urgency")) or ticket.urgency
             ticket.ai_confidence = classification.get("confidence", 0.0)
             
             # Check if escalation is needed

@@ -9,7 +9,8 @@ class LanguageDetector:
     def __init__(self):
         # Hindi Unicode ranges
         self.hindi_chars = set(range(0x0900, 0x097F))  # Devanagari
-        self.english_chars = set(string.ascii_letters)
+        # English characters, numbers, and common symbols
+        self.english_and_symbols_chars = set(string.ascii_letters + string.digits + string.punctuation)
         
         # Common Hindi words in Roman script
         self.hinglish_patterns = {
@@ -57,8 +58,8 @@ class LanguageDetector:
         """Clean and normalize text for analysis"""
         # Remove extra whitespace
         text = re.sub(r'\s+', ' ', text.strip())
-        # Remove special characters but keep letters and basic punctuation
-        text = re.sub(r'[^\w\s\u0900-\u097F.,!?]', '', text)
+        # Allow numbers, common punctuation, and Hindi Unicode characters
+        text = re.sub(r'[^\w\s\u0900-\u097F\.,!?"\'\-]', '', text)
         return text.lower()
     
     def _analyze_characters(self, text: str) -> Dict[str, float]:
@@ -74,7 +75,7 @@ class LanguageDetector:
                 
                 if char_code in self.hindi_chars:
                     hindi_chars += 1
-                elif char in self.english_chars:
+                elif char in self.english_and_symbols_chars:
                     english_chars += 1
         
         if total_chars == 0:
@@ -109,29 +110,44 @@ class LanguageDetector:
         hinglish_ratio = word_analysis.get("hinglish_ratio", 0)
         
         # Adjust ratios based on Hinglish detection
-        if hinglish_ratio > 0.2:  # 20% Hinglish words detected
-            hindi_ratio += hinglish_ratio * 0.5  # Boost Hindi score
+        # A higher hinglish ratio suggests more Hindi influence, so boost hindi_ratio
+        if hinglish_ratio > 0.1:
+            hindi_ratio += hinglish_ratio * 0.3  # Moderate boost for Hindi if Hinglish is present
         
-        # Determine primary language
-        if hindi_ratio > 0.3:
+        # Normalize ratios to sum to 1 if they exceed it due to boosting
+        total_script_ratio = hindi_ratio + english_ratio
+        if total_script_ratio > 1.0:
+            hindi_ratio /= total_script_ratio
+            english_ratio /= total_script_ratio
+
+        # Determine primary language with more balanced thresholds
+        if hindi_ratio > 0.45: # If Hindi script is dominant
             primary_language = "hindi"
-        elif english_ratio > 0.7:
+        elif english_ratio > 0.6: # If English script is dominant
             primary_language = "english"
-        else:
+        elif hinglish_ratio > 0.15: # If significant Hinglish words, lean towards mixed
             primary_language = "mixed"
+        else:
+            primary_language = "english" # Default to English if no strong indicators
+
+        # Check if mixed: significant presence of both scripts or notable Hinglish
+        is_mixed = (hindi_ratio > 0.15 and english_ratio > 0.15) or hinglish_ratio > 0.15
         
-        # Check if mixed
-        is_mixed = (hindi_ratio > 0.1 and english_ratio > 0.1) or hinglish_ratio > 0.1
+        # Calculate confidence based on the primary language's dominance
+        if primary_language == "hindi":
+            confidence = hindi_ratio
+        elif primary_language == "english":
+            confidence = english_ratio
+        else: # mixed
+            confidence = max(hindi_ratio, english_ratio) * 0.7 + hinglish_ratio * 0.3 # Weighted for mixed
         
-        # Calculate confidence
-        confidence = max(hindi_ratio, english_ratio)
-        if primary_language == "mixed":
-            confidence = min(0.8, confidence + hinglish_ratio)
-        
+        # Ensure confidence is within 0-1 range
+        confidence = min(1.0, max(0.0, confidence))
+
         return {
             "primary_language": primary_language,
             "is_mixed": is_mixed,
-            "confidence": min(1.0, confidence),
+            "confidence": confidence,
             "hindi_ratio": hindi_ratio,
             "english_ratio": english_ratio,
             "hinglish_ratio": hinglish_ratio

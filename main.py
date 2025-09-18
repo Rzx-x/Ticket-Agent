@@ -6,16 +6,17 @@ import logging
 import os
 from datetime import datetime, timedelta
 import uuid
+from typing import List
 
 # Local imports
 from db.database import get_db, create_tables
 from db.models import Ticket, TicketResponse, TicketAnalytics, KnowledgeBase
 from ai.language_detector import language_detector
 from ai.claude_service import claude_service
-from ai.vector_store import vector_store
-from schemas import TicketCreate, TicketResponse as TicketResponseSchema, TicketUpdate
-from services.ticket_service import ticket_service
-from services.analytics_service import analytics_service
+from ai.vector_database import vector_store
+from schemas import TicketCreate, TicketResponse as TicketResponseSchema, TicketUpdate, TicketStatusEnum, TicketUrgencyEnum
+from scripts.ticket_services import ticket_service
+from scripts.analytics_services import analytics_service
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -132,6 +133,7 @@ async def update_ticket(
         raise HTTPException(status_code=500, detail=str(e))
 
 # Analytics endpoints
+
 @app.get("/api/analytics/dashboard")
 async def get_dashboard_analytics(db: Session = Depends(get_db)):
     """Get dashboard analytics"""
@@ -142,98 +144,44 @@ async def get_dashboard_analytics(db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Error fetching analytics: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/analytics/trends")
-async def get_trend_analytics(
-    days: int = 30,
-    db: Session = Depends(get_db)
-):
-    """Get trend analytics for specified number of days"""
+    
+async def process_ticket_ai(ticket_id: str, description: str):
+    """
+    Perform AI processing on a newly created ticket in the background.
+    This includes language detection, classification, and AI response generation.
+    """
+    db = None
     try:
-        trends = await analytics_service.get_trend_analysis(db, days)
-        return trends
-        
-    except Exception as e:
-        logger.error(f"Error fetching trends: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-# AI endpoints
-@app.post("/api/ai/classify")
-async def classify_text(data: dict):
-    """Classify text using AI"""
-    try:
-        text = data.get("text", "")
-        if not text:
-            raise HTTPException(status_code=400, detail="Text is required")
-        
-        # Language detection
-        language_info = language_detector.detect_language(text)
-        
-        # AI classification
-        classification = await claude_service.classify_ticket(text, language_info)
-        
-        return {
-            "text": text,
-            "language_info": language_info,
-            "classification": classification
-        }
-        
-    except Exception as e:
-        logger.error(f"Error in AI classification: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/ai/similar-tickets")
-async def find_similar_tickets(data: dict):
-    """Find similar tickets using vector search"""
-    try:
-        text = data.get("text", "")
-        limit = data.get("limit", 5)
-        
-        if not text:
-            raise HTTPException(status_code=400, detail="Text is required")
-        
-        similar_tickets = vector_store.find_similar_tickets(text, limit)
-        return {"similar_tickets": similar_tickets}
-        
-    except Exception as e:
-        logger.error(f"Error finding similar tickets: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-# Background task functions
-async def process_ticket_ai(ticket_id: str, ticket_text: str):
-    """Background task to process ticket with AI"""
-    try:
-        # Get database session
         db = next(get_db())
         
-        # Language detection
-        language_info = language_detector.detect_language(ticket_text)
+        # 1. Language Detection
+        language_info = await language_detector.detect_language(description)
+        logger.info(f"Language detection for ticket {ticket_id}: {language_info}")
         
-        # Find similar tickets
-        similar_tickets = vector_store.find_similar_tickets(ticket_text, 3)
+        # 2. Ticket Classification
+        classification = await claude_service.classify_ticket(description, language_info)
+        logger.info(f"Classification for ticket {ticket_id}: {classification}")
         
-        # AI classification
-        classification = await claude_service.classify_ticket(ticket_text, language_info)
+        # 3. Generate AI Response / Suggestion
+        # First, try to find relevant knowledge base articles
+        kb_articles = await vector_store.search_knowledge_base(description, k=2)
         
-        # Generate AI response
         ai_response = await claude_service.generate_response(
-            ticket_text, classification, language_info, similar_tickets
+            description,
+            classification.get("category"),
+            classification.get("subcategory"),
+            kb_articles,
+            language_info
         )
+        logger.info(f"AI response for ticket {ticket_id}: {ai_response}")
         
-        # Update ticket with AI data
+        # 4. Update ticket with AI data
         await ticket_service.update_ticket_ai_data(
-            db, ticket_id, language_info, classification, ai_response
-        )
-        
-        # Add to vector store
-        vector_store.add_ticket_embedding(
+            db,
             ticket_id,
-            ticket_text,
-            {
-                "category": classification.get("category"),
-                "urgency": classification.get("urgency"),
-                "language": language_info.get("primary_language")
-            }
+            language_info,
+            classification,
+            ai_response
         )
         
         logger.info(f"AI processing completed for ticket: {ticket_id}")
@@ -241,7 +189,14 @@ async def process_ticket_ai(ticket_id: str, ticket_text: str):
     except Exception as e:
         logger.error(f"Error in AI processing for ticket {ticket_id}: {e}")
     finally:
-        db.close()
+        if db:
+            db.close()
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+```
 
 if __name__ == "__main__":
     import uvicorn
