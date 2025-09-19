@@ -13,24 +13,43 @@ class VectorSearchService:
         self._embedding_model = None
         self.tickets_collection = "omnidesk_tickets"
         self.kb_collection = "omnidesk_knowledge"
+        self._initialized = False
         
         try:
-            # Initialize Qdrant client
-            if settings.QDRANT_URL and settings.QDRANT_API_KEY:
-                self._client = QdrantClient(
-                    url=settings.QDRANT_URL,
-                    api_key=settings.QDRANT_API_KEY
-                )
-            else:
-                # Local Qdrant instance
-                self._client = QdrantClient(host="localhost", port=6333)
-            
-            # Ensure collections exist
-            self._ensure_collections()
-            logger.info("Vector search service initialized successfully")
+            self._initialize_client()
+            self._initialize_embedding_model()
+            if self._client and self._embedding_model:
+                self._ensure_collections()
+                self._initialized = True
+                logger.info("Vector search service initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize vector search: {e}")
             self._client = None
+            self._embedding_model = None
+    
+    def _initialize_client(self):
+        """Initialize Qdrant client with retry logic"""
+        if settings.QDRANT_URL and settings.QDRANT_API_KEY:
+            self._client = QdrantClient(
+                url=settings.QDRANT_URL,
+                api_key=settings.QDRANT_API_KEY,
+                timeout=10
+            )
+        else:
+            # Local Qdrant instance
+            self._client = QdrantClient(
+                host="localhost", 
+                port=6333,
+                timeout=10
+            )
+    
+    def _initialize_embedding_model(self):
+        """Initialize embedding model with error handling"""
+        try:
+            self._embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        except Exception as e:
+            logger.error(f"Failed to initialize embedding model: {e}")
+            self._embedding_model = None
     
     @property
     def client(self):
@@ -60,7 +79,11 @@ class VectorSearchService:
     
     def is_available(self) -> bool:
         """Check if vector search service is available"""
-        return self.client is not None and self.embedding_model is not None
+        return (
+            self._initialized and 
+            self._client is not None and 
+            self._embedding_model is not None
+        )
     
     def _ensure_collections(self):
         """Create collections if they don't exist"""

@@ -1,3 +1,5 @@
+"use client";
+
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { BarChart3, Zap, Shield, Globe, Brain, Sparkles, ArrowRight, Play } from 'lucide-react';

@@ -1,24 +1,18 @@
-import { extendTheme } from '@chakra-ui/react';
-import { mode } from '@chakra-ui/theme-tools';
+"use client";
 
-const config = {
-  initialColorMode: 'light',
-  useSystemColorMode: true,
-};
+import { extendTheme } from '@chakra-ui/react';
 
 const theme = extendTheme({
-  config,
   fonts: {
     heading: 'var(--font-inter)',
     body: 'var(--font-inter)',
   },
   styles: {
-    global: (props: any) => ({
+    global: {
       body: {
-        bg: mode('gray.50', 'gray.900')(props),
-        color: mode('gray.800', 'whiteAlpha.900')(props),
+        bg: 'transparent',
       },
-    }),
+    },
   },
   components: {
     Button: {

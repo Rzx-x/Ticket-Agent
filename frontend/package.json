@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "build:prod": "NODE_ENV=production next build",
+    "export": "next export",
+    "analyze": "ANALYZE=true npm run build"
   },
   "dependencies": {
     "@chakra-ui/next-js": "^2.4.2",

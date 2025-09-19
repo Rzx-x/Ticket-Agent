@@ -21,56 +21,62 @@ class AIService:
     def is_available(self) -> bool:
         return self.client is not None
     
-    def detect_language(self, text: str) -> Dict[str, any]:
-        return self.language_detector.detect_language(text)
+    def detect_language(self, text: str) -> str:
+        """Detect language and return simple string for backward compatibility"""
+        try:
+            lang_result = self.language_detector.detect_language(text)
+            return lang_result.get("primary_language", "en")
+        except Exception as e:
+            logger.error(f"Language detection failed: {e}")
+            return "en"
     
     async def classify_ticket(self, subject: str, description: str) -> Dict[str, Any]:
         """Classify ticket using Claude with detailed analysis"""
         if not self.is_available():
             return self._get_fallback_classification()
         
-        lang_info = self.detect_language(description)
-        
-        prompt = f"""
-        You are an expert IT support classifier for POWERGRID (Indian power company). 
-        Analyze this support ticket and classify it accurately.
-        
-        Subject: {subject}
-        Description: {description}
-        Language Info: {lang_info}
-        
-        Respond with ONLY a valid JSON object:
-        {{
-            "category": "exact category name",
-            "subcategory": "specific issue type", 
-            "urgency": "low|medium|high|critical",
-            "confidence": 0.85,
-            "reasoning": "brief explanation",
-            "suggested_keywords": ["keyword1", "keyword2"],
-            "estimated_resolution_time": "2 hours"
-        }}
-        
-        CATEGORIES (use exactly these):
-        - Network: VPN, WiFi, internet, firewall, network drives, connectivity
-        - Hardware: Computer, laptop, printer, monitor, keyboard, mouse, hardware failures
-        - Software: Applications, installation, crashes, updates, licensing, MS Office
-        - Email: Outlook, email issues, email setup, email access problems  
-        - Account: Password reset, login issues, permissions, user account problems
-        - Security: Antivirus, security alerts, suspicious activity, access control
-        - Printer: Printing issues, printer setup, print queue, scanner problems
-        - Telephony: Phone systems, extensions, call forwarding, conference calls
-        - Other: Facility issues, non-IT requests, general inquiries
-        
-        URGENCY RULES:
-        - critical: Complete system outage, security breach, many users affected
-        - high: Important system down, urgent business impact, manager escalation
-        - medium: Standard issues, some work impact, normal business request  
-        - low: Minor issues, enhancement requests, general questions
-        
-        Consider Indian IT environment context and common POWERGRID issues.
-        """
-        
         try:
+            lang_info = self.language_detector.detect_language(description)
+            
+            prompt = f"""
+            You are an expert IT support classifier for POWERGRID (Indian power company). 
+            Analyze this support ticket and classify it accurately.
+            
+            Subject: {subject}
+            Description: {description}
+            Language Info: {lang_info}
+            
+            Respond with ONLY a valid JSON object:
+            {{
+                "category": "exact category name",
+                "subcategory": "specific issue type", 
+                "urgency": "low|medium|high|critical",
+                "confidence": 0.85,
+                "reasoning": "brief explanation",
+                "suggested_keywords": ["keyword1", "keyword2"],
+                "estimated_resolution_time": "2 hours"
+            }}
+            
+            CATEGORIES (use exactly these):
+            - Network: VPN, WiFi, internet, firewall, network drives, connectivity
+            - Hardware: Computer, laptop, printer, monitor, keyboard, mouse, hardware failures
+            - Software: Applications, installation, crashes, updates, licensing, MS Office
+            - Email: Outlook, email issues, email setup, email access problems  
+            - Account: Password reset, login issues, permissions, user account problems
+            - Security: Antivirus, security alerts, suspicious activity, access control
+            - Printer: Printing issues, printer setup, print queue, scanner problems
+            - Telephony: Phone systems, extensions, call forwarding, conference calls
+            - Other: Facility issues, non-IT requests, general inquiries
+            
+            URGENCY RULES:
+            - critical: Complete system outage, security breach, many users affected
+            - high: Important system down, urgent business impact, manager escalation
+            - medium: Standard issues, some work impact, normal business request  
+            - low: Minor issues, enhancement requests, general questions
+            
+            Consider Indian IT environment context and common POWERGRID issues.
+            """
+            
             response = await self.client.messages.create(
                 model="claude-3-haiku-20240307",
                 max_tokens=1000,
@@ -96,7 +102,7 @@ class AIService:
                 
                 logger.info(f"Ticket classified: {result['category']} - {result['urgency']} (confidence: {result['confidence']})")
                 return result
-                
+        
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse AI classification JSON: {e}")
         except Exception as e:

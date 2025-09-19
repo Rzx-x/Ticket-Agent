@@ -2,10 +2,11 @@ import sys
 import os
 import time
 import logging
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.append(root_dir)
@@ -21,6 +22,31 @@ from app.api.analytics import router as analytics_router
 # Setup logging
 setup_logging()
 logger = logging.getLogger(__name__)
+
+# Prometheus metrics
+REQUEST_COUNT = Counter(
+    'http_requests_total',
+    'Total HTTP requests',
+    ['method', 'endpoint', 'status']
+)
+
+REQUEST_DURATION = Histogram(
+    'http_request_duration_seconds',
+    'HTTP request duration in seconds',
+    ['method', 'endpoint']
+)
+
+TICKET_OPERATIONS = Counter(
+    'ticket_operations_total',
+    'Total ticket operations',
+    ['operation', 'status']
+)
+
+AI_PROCESSING_TIME = Histogram(
+    'ai_processing_seconds',
+    'AI processing time in seconds',
+    ['operation']
+)
 
 # Create database tables
 try:
@@ -72,6 +98,19 @@ async def add_process_time_header(request: Request, call_next):
     response = await call_next(request)
     process_time = time.time() - start_time
     response.headers["X-Process-Time"] = str(process_time)
+    
+    # Record Prometheus metrics
+    REQUEST_COUNT.labels(
+        method=request.method,
+        endpoint=request.url.path,
+        status=response.status_code
+    ).inc()
+    
+    REQUEST_DURATION.labels(
+        method=request.method,
+        endpoint=request.url.path
+    ).observe(process_time)
+    
     return response
 
 # Exception handlers
@@ -192,6 +231,14 @@ async def system_info():
         "supported_sources": ["web", "email", "sms", "glpi", "solman"],
         "supported_languages": ["en", "hi", "hindi+english"]
     }
+
+@app.get("/metrics")
+async def get_metrics():
+    """Prometheus metrics endpoint"""
+    return Response(
+        generate_latest(),
+        media_type=CONTENT_TYPE_LATEST
+    )
 
 # Startup event
 @app.on_event("startup")

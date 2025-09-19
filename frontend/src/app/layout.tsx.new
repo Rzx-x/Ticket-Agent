@@ -1,6 +1,5 @@
 import { Inter } from 'next/font/google'
-import { ClientWrapper } from './ClientWrapper'
-import { ErrorBoundaryWrapper } from '@/components/ErrorBoundary'
+import { Providers } from './providers'
 import './globals.css'
 export { metadata } from './metadata'
 
@@ -9,7 +8,7 @@ const inter = Inter({
   variable: '--font-inter',
 })
 
-function RootLayout({
+export default function RootLayout({
   children,
 }: {
   children: React.ReactNode
@@ -17,14 +16,12 @@ function RootLayout({
   return (
     <html lang="en" className={inter.variable}>
       <body>
-        <ErrorBoundaryWrapper>
-          <ClientWrapper>
+        <Providers>
+          <main className="min-h-screen bg-gradient-to-br from-gray-900 via-primary-900 to-gray-900 text-gray-100 antialiased">
             {children}
-          </ClientWrapper>
-        </ErrorBoundaryWrapper>
+          </main>
+        </Providers>
       </body>
     </html>
   )
 }
-
-export default RootLayout

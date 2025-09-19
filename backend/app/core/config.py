@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     
     # AI Services
-    ANTHROPIC_API_KEY: str
+    ANTHROPIC_API_KEY: Optional[str] = None
     
     # Vector Database
     QDRANT_URL: str = "http://localhost:6333"
@@ -65,6 +65,14 @@ class Settings(BaseSettings):
     
     # Logging
     LOG_LEVEL: str = "INFO"
+    
+    @property
+    def is_production(self) -> bool:
+        return self.ENVIRONMENT == "production"
+    
+    @property
+    def is_development(self) -> bool:
+        return self.ENVIRONMENT == "development"
     
     class Config:
         env_file = ".env"

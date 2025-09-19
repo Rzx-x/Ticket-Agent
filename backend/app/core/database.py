@@ -123,29 +123,27 @@ async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
         await session.close()
 
 
-async def test_db_connection() -> bool:
-    """Test both sync and async database connections."""
-    # Test sync connection
+def test_db_connection() -> bool:
+    """Test database connection synchronously."""
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
-            logger.info("Sync database connection successful")
-            sync_ok = True
+            logger.info("Database connection successful")
+            return True
     except Exception as e:
-        logger.error(f"Sync database connection failed: {e}")
-        sync_ok = False
+        logger.error(f"Database connection failed: {e}")
+        return False
 
-    # Test async connection if configured
-    if async_engine is not None:
-        try:
-            async with async_engine.connect() as connection:
-                await connection.execute(text("SELECT 1"))
-                logger.info("Async database connection successful")
-                async_ok = True
-        except Exception as e:
-            logger.error(f"Async database connection failed: {e}")
-            async_ok = False
-    else:
-        async_ok = True  # Skip async test if not configured
-
-    return sync_ok and async_ok
+async def test_async_db_connection() -> bool:
+    """Test async database connection."""
+    if async_engine is None:
+        return True  # Skip if not configured
+    
+    try:
+        async with async_engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
+            logger.info("Async database connection successful")
+            return True
+    except Exception as e:
+        logger.error(f"Async database connection failed: {e}")
+        return False

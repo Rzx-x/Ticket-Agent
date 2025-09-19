@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Zap, Shield, Globe, Sparkles } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Send, Bot, User, Zap, Shield, Globe, Sparkles, AlertCircle } from 'lucide-react';
 import * as THREE from 'three';
+import type { MessageFormData, SubmitTicketResponse, APIError } from '@/types/ticket';
 
 interface Message {
   id: string;
@@ -10,6 +11,7 @@ interface Message {
   isUser: boolean;
   timestamp: Date;
   isLoading?: boolean;
+  error?: boolean;
 }
 
 export default function TicketForm() {
@@ -23,10 +25,12 @@ export default function TicketForm() {
   ]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const frameRef = useRef<number | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // 3D Background Animation
   useEffect(() => {
@@ -140,9 +144,9 @@ export default function TicketForm() {
     };
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim()) return;
+    if (!inputText.trim() || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -154,6 +158,7 @@ export default function TicketForm() {
     setMessages(prev => [...prev, userMessage]);
     setInputText('');
     setIsLoading(true);
+    setError(null);
 
     const loadingMessage: Message = {
       id: (Date.now() + 1).toString(),
@@ -166,19 +171,27 @@ export default function TicketForm() {
     setMessages(prev => [...prev, loadingMessage]);
 
     try {
+      const requestData: MessageFormData = {
+        text: inputText,
+        user_email: 'user@powergrid.com'
+      };
+
       const response = await fetch('/api/submit-ticket', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          text: inputText,
-          source: 'web',
-          user_email: 'user@powergrid.com'
+          ...requestData,
+          source: 'web'
         }),
       });
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data: SubmitTicketResponse = await response.json();
 
       setMessages(prev => {
         const filtered = prev.filter(msg => !msg.isLoading);
@@ -191,19 +204,25 @@ export default function TicketForm() {
       });
 
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
+      
       setMessages(prev => {
         const filtered = prev.filter(msg => !msg.isLoading);
         return [...filtered, {
           id: (Date.now() + 2).toString(),
           text: "⚡ I'm experiencing temporary connectivity issues. Your ticket has been securely saved and our technical team will review it manually within minutes.",
           isUser: false,
-          timestamp: new Date()
+          timestamp: new Date(),
+          error: true
         }];
       });
+      
+      setError(errorMessage);
+      console.error('Failed to submit ticket:', error);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [inputText, isLoading]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -326,6 +345,8 @@ export default function TicketForm() {
                         ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white border-blue-300/30'
                         : message.isLoading
                         ? 'bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200/50 text-yellow-800 animate-pulse'
+                        : message.error
+                        ? 'bg-gradient-to-r from-red-50 to-pink-50 border-red-200/50 text-red-800'
                         : 'bg-white/80 border-white/30 text-gray-800'
                     }`}
                   >
@@ -344,6 +365,23 @@ export default function TicketForm() {
             ))}
           </div>
 
+          {/* Error Display */}
+          {error && (
+            <div className="mx-8 mb-4 p-4 bg-red-500/10 border border-red-500/20 rounded-xl backdrop-blur-sm">
+              <div className="flex items-center gap-2 text-red-300">
+                <AlertCircle className="w-5 h-5" />
+                <span className="font-medium">Connection Error</span>
+              </div>
+              <p className="text-red-200 text-sm mt-1">{error}</p>
+              <button 
+                onClick={() => setError(null)}
+                className="text-red-300 hover:text-red-200 text-xs mt-2 underline"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
           {/* Input Form */}
           <form 
             onSubmit={handleSubmit} 
@@ -353,6 +391,7 @@ export default function TicketForm() {
             <div className="flex gap-4">
               <div className="flex-1 relative group">
                 <input
+                  ref={inputRef}
                   type="text"
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
@@ -362,6 +401,8 @@ export default function TicketForm() {
                   disabled={isLoading}
                   aria-label="Message input"
                   aria-describedby="input-help"
+                  autoComplete="off"
+                  maxLength={500}
                 />
                 <div 
                   className="absolute inset-0 rounded-2xl bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-cyan-500/20 -z-10 blur-xl animate-pulse"
