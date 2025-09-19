@@ -1,0 +1,5 @@
+import psutil
+import time
+
+# Add to requirements.txt
+requirements = """psutil==5.9.8"""
