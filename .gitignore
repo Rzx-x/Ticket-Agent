@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+
+# Environment
+.env
+
+# Backend
+backend/venv/
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+
+# Uploads
+uploads/
+
+# Databases
+dev.db
+omnidesk.db
+
+# Logs
+*.log
+
+# Celery
+celerybeat-schedule
+dump.rdb
