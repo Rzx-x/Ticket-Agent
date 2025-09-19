@@ -7,11 +7,20 @@ WORKDIR /app
 # Add the project root to the python path
 ENV PYTHONPATH=/app
 
-# Copy the backend directory to the container
-COPY ./backend /app
+# Copy the requirements first for better caching
+COPY ./backend/requirements.txt /app/
 
 # Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the entire project to the container for proper imports
+COPY . /app
+
+# Set the Python path to include both the app root and backend
+ENV PYTHONPATH=/app:/app/backend
+
+# Set working directory to backend
+WORKDIR /app/backend
 
 # Make port 8000 available to the world outside this container
 EXPOSE 8000

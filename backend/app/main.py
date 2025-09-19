@@ -12,11 +12,10 @@ sys.path.append(root_dir)
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from app.core.config import settings
-from app.core.database import Base, engine, test_db_connection
+from app.core.database import create_tables, test_db_connection
 from app.core.logging import setup_logging
-from app.api.tickets import router as tickets_router
-from app.api.health import router as health_router
-from app.api.analytics import router as analytics_router
+# Import API routers
+from app.api.tickets_simple import router as tickets_router
 
 # Setup logging
 setup_logging()
@@ -24,8 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Create database tables
 try:
-    Base.metadata.create_all(bind=engine)
-    logger.info("Database tables created successfully")
+    create_tables()
 except Exception as e:
     logger.error(f"Error creating database tables: {e}")
 
@@ -110,16 +108,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 # Include routers
-app.include_router(
-    tickets_router, 
-    prefix="/api/v1/tickets", 
-    tags=["tickets"]
-)
-app.include_router(
-    analytics_router, 
-    prefix="/api/v1/analytics", 
-    tags=["analytics"]
-)
+app.include_router(tickets_router, prefix="/api/v1/tickets", tags=["tickets"])
 
 # Health check endpoints
 @app.get("/")
@@ -132,6 +121,7 @@ async def root():
     }
 
 @app.get("/health")
+@app.get("/api/v1/health")
 async def health_check():
     """Comprehensive health check"""
     health_status = {
@@ -143,23 +133,18 @@ async def health_check():
     }
     
     # Database check
-    health_status["services"]["database"] = "healthy" if test_db_connection() else "unhealthy"
+    try:
+        db_status = await test_db_connection()
+        health_status["services"]["database"] = "healthy" if db_status else "unhealthy"
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
+        health_status["services"]["database"] = "unhealthy"
     
-    # AI service check
-    from app.services.ai_service import ai_service
-    health_status["services"]["ai"] = "healthy" if ai_service.is_available() else "unavailable"
-    
-    # Vector service check
-    from app.services.vector_service import vector_service
-    health_status["services"]["vector_search"] = "healthy" if vector_service.is_available() else "unavailable"
-    
-    # Email service check
-    from app.integrations.email_service import email_service
-    health_status["services"]["email"] = "configured" if email_service.is_configured else "not_configured"
-    
-    # SMS service check
-    from app.integrations.sms_service import sms_service
-    health_status["services"]["sms"] = "configured" if sms_service.is_configured else "not_configured"
+    # Service checks (will enable when services are available)
+    health_status["services"]["ai"] = "not_configured" 
+    health_status["services"]["vector_search"] = "not_configured" 
+    health_status["services"]["email"] = "not_configured" 
+    health_status["services"]["sms"] = "not_configured"
     
     # Overall status
     critical_services = ["database"]

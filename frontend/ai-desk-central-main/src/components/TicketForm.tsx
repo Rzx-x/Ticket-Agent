@@ -6,28 +6,34 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Send, User, Mail, AlertTriangle } from 'lucide-react';
+import { Send, User, Mail, AlertTriangle, CheckCircle2, Wifi, WifiOff } from 'lucide-react';
+import { TicketCreateRequest } from '@/services/api';
+import { useCreateTicket, useOfflineSync } from '@/hooks/useTickets';
 
 interface TicketFormData {
   name: string;
   email: string;
   category: string;
-  priority: string;
+  priority: 'low' | 'medium' | 'high' | 'critical';
   subject: string;
   description: string;
+  department?: string;
 }
 
 export const TicketForm = () => {
   const { toast } = useToast();
+  const createTicketMutation = useCreateTicket();
+  const { isOnline } = useOfflineSync();
+  
   const [formData, setFormData] = useState<TicketFormData>({
     name: '',
     email: '',
     category: '',
-    priority: '',
+    priority: 'medium' as const,
     subject: '',
     description: ''
   });
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [success, setSuccess] = useState(false);
 
   const handleChange = (field: keyof TicketFormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -35,35 +41,72 @@ export const TicketForm = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
+    setSuccess(false);
 
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    if (!isOnline) {
+      toast({
+        title: "No Internet Connection",
+        description: "Please check your connection and try again.",
+        variant: "destructive"
+      });
+      return;
+    }
 
-    toast({
-      title: "Ticket Submitted Successfully!",
-      description: "Our IT team will contact you shortly. Ticket ID: #TK-" + Math.random().toString(36).substr(2, 6).toUpperCase(),
+    const ticketData: TicketCreateRequest = {
+      title: formData.subject,
+      description: formData.description,
+      reporter_name: formData.name,
+      reporter_email: formData.email,
+      category: formData.category,
+      priority: formData.priority,
+      department: formData.department
+    };
+
+    createTicketMutation.mutate(ticketData, {
+      onSuccess: (result) => {
+        toast({
+          title: "Ticket Submitted Successfully!",
+          description: `Our IT team will contact you shortly. Ticket ID: ${result.id}`,
+        });
+
+        // Reset form
+        setFormData({
+          name: '',
+          email: '',
+          category: '',
+          priority: 'medium' as const,
+          subject: '',
+          description: ''
+        });
+        setSuccess(true);
+      }
     });
-
-    // Reset form
-    setFormData({
-      name: '',
-      email: '',
-      category: '',
-      priority: '',
-      subject: '',
-      description: ''
-    });
-    setIsSubmitting(false);
   };
 
   return (
     <Card className="w-full max-w-2xl mx-auto shadow-medium bg-gradient-card">
       <CardHeader className="text-center">
         <CardTitle className="text-2xl font-bold text-foreground">Submit IT Support Ticket</CardTitle>
-        <CardDescription className="text-muted-foreground">
+        <CardDescription className="text-muted-foreground flex items-center justify-center gap-2">
           Describe your issue and our AI will classify and route it to the right team
+          {isOnline ? (
+            <div className="flex items-center gap-1 text-green-600">
+              <Wifi className="h-4 w-4" />
+              <span className="text-xs">Online</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 text-red-600">
+              <WifiOff className="h-4 w-4" />
+              <span className="text-xs">Offline</span>
+            </div>
+          )}
         </CardDescription>
+        {success && (
+          <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 rounded-md flex items-center gap-2">
+            <CheckCircle2 className="h-5 w-5" />
+            <span>Your ticket was submitted successfully!</span>
+          </div>
+        )}  
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -165,10 +208,10 @@ export const TicketForm = () => {
             type="submit"
             variant="hero"
             size="lg"
-            disabled={isSubmitting}
+            disabled={createTicketMutation.isPending || !isOnline}
             className="w-full"
           >
-            {isSubmitting ? (
+            {createTicketMutation.isPending ? (
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
                 Submitting Ticket...
@@ -176,7 +219,7 @@ export const TicketForm = () => {
             ) : (
               <div className="flex items-center gap-2">
                 <Send className="w-4 h-4" />
-                Submit Support Ticket
+                {isOnline ? 'Submit Support Ticket' : 'Offline - Cannot Submit'}
               </div>
             )}
           </Button>

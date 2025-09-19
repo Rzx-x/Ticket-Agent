@@ -1,0 +1,17 @@
+FROM python:3.11-slim
+
+# Set the working directory
+WORKDIR /app
+
+# Install basic dependencies
+RUN pip install fastapi uvicorn python-dotenv
+
+# Copy the simple main file
+COPY simple_main.py /app/
+COPY .env /app/
+
+# Expose port 8000
+EXPOSE 8000
+
+# Run the application
+CMD ["python", "simple_main.py"]

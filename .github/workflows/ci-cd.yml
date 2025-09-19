@@ -1,3 +1,73 @@
+name: OmniDesk AI - CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [ published ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  PYTHON_VERSION: '3.10'
+  NODE_VERSION: '18'
+
+jobs:
+  # Code Quality and Security Checks
+  quality-checks:
+    name: Code Quality & Security
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements-gpu.txt
+          pip install black flake8 mypy bandit safety pre-commit
+
+      - name: Code formatting check (Black)
+        run: black --check --diff backend/ ai/
+
+      - name: Linting check (Flake8)
+        run: flake8 backend/ ai/ --max-line-length=120 --extend-ignore=E203,W503
+
+      - name: Type checking (MyPy)
+        run: mypy backend/app/ ai/services/ --ignore-missing-imports
+
+      - name: Security scan (Bandit)
+        run: bandit -r backend/app/ -f json -o bandit-report.json
+
+      - name: Dependency vulnerability scan
+        run: safety check --json --output safety-report.json
+
+      - name: Upload security reports
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: security-reports
+          path: |
+            bandit-report.json
+            safety-report.json
+
 name: CI/CD
 
 on:

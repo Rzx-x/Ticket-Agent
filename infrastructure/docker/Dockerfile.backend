@@ -1,0 +1,170 @@
+# Multi-stage Dockerfile for OmniDesk AI Backend
+# Optimized for production deployment with GPU support
+
+# Base image with CUDA support for GPU acceleration
+FROM nvidia/cuda:11.8-devel-ubuntu22.04 as base
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONPATH="/app"
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    python3.10 \
+    python3.10-dev \
+    python3-pip \
+    build-essential \
+    curl \
+    git \
+    libpq-dev \
+    libssl-dev \
+    libffi-dev \
+    libjpeg-dev \
+    libpng-dev \
+    libwebp-dev \
+    zlib1g-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create Python symlink
+RUN ln -s /usr/bin/python3.10 /usr/bin/python
+
+# Upgrade pip and install build tools
+RUN python -m pip install --upgrade pip setuptools wheel
+
+# Development stage
+FROM base as development
+
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY backend/requirements-gpu.txt /app/requirements.txt
+COPY backend/requirements-health.txt /app/requirements-health.txt
+
+# Install Python dependencies with GPU support
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements-health.txt
+
+# Install development dependencies
+RUN pip install --no-cache-dir \
+    pytest-xdist \
+    black \
+    flake8 \
+    mypy \
+    pre-commit \
+    jupyter
+
+# Copy application code
+COPY backend/ /app/backend/
+COPY ai/ /app/ai/
+COPY db/ /app/db/
+COPY configs/ /app/configs/
+COPY scripts/ /app/scripts/
+
+# Set up Python path
+ENV PYTHONPATH="/app:/app/backend:/app/ai"
+
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+RUN chown -R appuser:appuser /app
+USER appuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD python /app/scripts/healthcheck.py
+
+# Development server command
+CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+# Production stage
+FROM base as production
+
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY backend/requirements-gpu.txt /app/requirements.txt
+COPY backend/requirements-health.txt /app/requirements-health.txt
+
+# Install Python dependencies (production only)
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements-health.txt
+
+# Install production server
+RUN pip install --no-cache-dir gunicorn[gthread] uvloop httptools
+
+# Copy application code (exclude development files)
+COPY backend/app/ /app/backend/app/
+COPY ai/ /app/ai/
+COPY db/models.py /app/db/models.py
+COPY db/migrations/ /app/db/migrations/
+COPY configs/ /app/configs/
+COPY scripts/healthcheck.py /app/scripts/healthcheck.py
+
+# Set up Python path
+ENV PYTHONPATH="/app:/app/backend:/app/ai"
+
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Create directories and set permissions
+RUN mkdir -p /app/logs /app/tmp && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Optimize Python imports
+RUN python -m compileall /app/backend/app/ /app/ai/
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD python /app/scripts/healthcheck.py
+
+# Production server configuration
+ENV WORKERS=4
+ENV WORKER_CLASS="uvicorn.workers.UvicornWorker"
+ENV MAX_REQUESTS=1000
+ENV MAX_REQUESTS_JITTER=100
+ENV TIMEOUT=30
+ENV KEEP_ALIVE=5
+
+# Expose port
+EXPOSE 8000
+
+# Production command with Gunicorn
+CMD ["sh", "-c", "gunicorn backend.app.main:app --bind 0.0.0.0:8000 --workers $WORKERS --worker-class $WORKER_CLASS --max-requests $MAX_REQUESTS --max-requests-jitter $MAX_REQUESTS_JITTER --timeout $TIMEOUT --keep-alive $KEEP_ALIVE --access-logfile - --error-logfile - --log-level info"]
+
+# GPU-optimized stage for ML workloads
+FROM production as gpu-optimized
+
+USER root
+
+# Install additional GPU optimization libraries
+RUN pip install --no-cache-dir \
+    nvidia-ml-py3 \
+    gpustat \
+    tensorrt \
+    cupy-cuda11x
+
+# Install CUDA-optimized PyTorch (if not already installed)
+RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+# Optimize CUDA settings
+ENV CUDA_CACHE_DISABLE=0
+ENV CUDA_CACHE_MAXSIZE=2147483648
+ENV TORCH_CUDA_ARCH_LIST="6.0;6.1;7.0;7.5;8.0;8.6"
+
+# GPU monitoring script
+COPY infrastructure/docker/scripts/gpu_monitor.py /app/scripts/gpu_monitor.py
+
+USER appuser
+
+# GPU health check (fallback to CPU check if no GPU)
+HEALTHCHECK --interval=30s --timeout=30s --start-period=10s --retries=3 \
+    CMD python /app/scripts/healthcheck.py --gpu-check
+
+# Command for GPU-optimized deployment
+CMD ["sh", "-c", "python /app/scripts/gpu_monitor.py & gunicorn backend.app.main:app --bind 0.0.0.0:8000 --workers $WORKERS --worker-class $WORKER_CLASS --max-requests $MAX_REQUESTS --max-requests-jitter $MAX_REQUESTS_JITTER --timeout $TIMEOUT --keep-alive $KEEP_ALIVE --access-logfile - --error-logfile - --log-level info"]

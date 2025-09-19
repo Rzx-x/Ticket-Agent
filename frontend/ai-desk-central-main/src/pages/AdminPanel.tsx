@@ -1,7 +1,9 @@
 import React from 'react';
 import { AdminDashboard } from '@/components/AdminDashboard';
+import { TicketList } from '@/components/TicketList';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ArrowLeft, LayoutDashboard, ListCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const AdminPanel = () => {
@@ -16,7 +18,27 @@ const AdminPanel = () => {
             </Button>
           </Link>
         </div>
-        <AdminDashboard />
+        
+        <Tabs defaultValue="dashboard" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-2 max-w-md">
+            <TabsTrigger value="dashboard" className="flex items-center gap-2">
+              <LayoutDashboard className="h-4 w-4" />
+              Dashboard
+            </TabsTrigger>
+            <TabsTrigger value="tickets" className="flex items-center gap-2">
+              <ListCheck className="h-4 w-4" />
+              All Tickets
+            </TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="dashboard" className="space-y-6">
+            <AdminDashboard />
+          </TabsContent>
+          
+          <TabsContent value="tickets" className="space-y-6">
+            <TicketList showFilters={true} />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
