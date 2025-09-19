@@ -1,0 +1,50 @@
+# FastAPI and server
+fastapi==0.104.1
+uvicorn[standard]==0.24.0.post1
+python-multipart==0.0.6
+
+# Database
+sqlalchemy==2.0.23
+alembic==1.13.1
+psycopg2-binary==2.9.9
+asyncpg==0.29.0
+tenacity==8.2.3
+
+# Pydantic and settings
+pydantic==2.5.0
+pydantic-settings==2.0.3
+
+# AI and ML
+anthropic==0.7.8
+qdrant-client==1.7.0
+sentence-transformers==2.7.0
+huggingface-hub>=0.16.4,<0.20.0
+langdetect==1.0.9
+
+# HTTP client and utilities
+httpx==0.25.2
+aiofiles==23.2.1
+python-dotenv==1.0.0
+
+# Email and communication
+aiosmtplib==3.0.1
+twilio==8.10.0
+
+# Background tasks
+celery==5.3.4
+redis==5.0.1
+
+# Logging and monitoring
+loguru==0.7.2
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+
+# Security
+python-jose==3.3.0
+passlib==1.7.4
+
+# MQTT
+asyncio-mqtt==0.16.1
