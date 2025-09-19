@@ -1,0 +1,27 @@
+import { Inter } from 'next/font/google'
+import { Providers } from './providers'
+import './globals.css'
+export { metadata } from './metadata'
+
+const inter = Inter({ 
+  subsets: ['latin'],
+  variable: '--font-inter',
+})
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <html lang="en" className={inter.variable}>
+      <body>
+        <Providers>
+          <main className="min-h-screen bg-gradient-to-br from-gray-900 via-primary-900 to-gray-900 text-gray-100 antialiased">
+            {children}
+          </main>
+        </Providers>
+      </body>
+    </html>
+  )
+}
